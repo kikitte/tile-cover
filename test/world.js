@@ -1,6 +1,6 @@
 'use strict';
 
-var cover = require('../');
+var cover = require('../index').SlippyTileCover;
 var test = require('tape');
 var fs = require('fs');
 var intersect = require('@turf/intersect');

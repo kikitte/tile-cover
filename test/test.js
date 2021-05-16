@@ -1,7 +1,7 @@
 'use strict';
 
-var cover = require('../'),
-    test = require('tape'),
+var cover = require('../index').SlippyTileCover;
+var test = require('tape'),
     intersect = require('@turf/intersect'),
     union = require('@turf/union'),
     erase = require('@turf/difference'),

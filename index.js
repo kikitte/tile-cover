@@ -1,111 +1,225 @@
 'use strict';
 
-var tilebelt = require('@mapbox/tilebelt');
+var geodeticGrid = require('./grid-geodetic');
+var mecartoGrid = require('./grid-mecarto');
+var slippyGrid = require('./grid-slippy');
 
 /**
- * Given a geometry, create cells and return them in a format easily readable
- * by any software that reads GeoJSON.
- *
- * @alias geojson
- * @param {Object} geom GeoJSON geometry
- * @param {Object} limits an object with min_zoom and max_zoom properties
- * specifying the minimum and maximum level to be tiled.
- * @returns {Object} FeatureCollection of cells formatted as GeoJSON Features
+ * @typedef {Object} Grid Note: x of tile coord increasing from left to right, and y increasing from top  bottom
+ * @property {(x: number, y: number, level: number) => Array<number>} pointToTile Get the tile for a point at a specified zoom level
+ * @property {(x: number, y: number, level: number) => Array<number>} pointToTileFraction Get the precise fractional tile location for a point at a zoom level
+ * @property {(tile: Array<number>) => Object} tileToGeoJSON Get a geojson representation of a tile
  */
-exports.geojson = function (geom, limits) {
-    return {
-        type: 'FeatureCollection',
-        features: getTiles(geom, limits).map(tileToFeature)
-    };
-};
-
-function tileToFeature(t) {
-    return {
-        type: 'Feature',
-        geometry: tilebelt.tileToGeoJSON(t),
-        properties: {}
-    };
-}
 
 /**
- * Given a geometry, create cells and return them in their raw form,
- * as an array of cell identifiers.
  *
- * @alias tiles
- * @param {Object} geom GeoJSON geometry
- * @param {Object} limits an object with min_zoom and max_zoom properties
- * specifying the minimum and maximum level to be tiled.
- * @returns {Array<Array<number>>} An array of tiles given as [x, y, z] arrays
+ * @param {Grid} grid
  */
-exports.tiles = getTiles;
-
-/**
- * Given a geometry, create cells and return them as
- * [quadkey](http://msdn.microsoft.com/en-us/library/bb259689.aspx) indexes.
- *
- * @alias indexes
- * @param {Object} geom GeoJSON geometry
- * @param {Object} limits an object with min_zoom and max_zoom properties
- * specifying the minimum and maximum level to be tiled.
- * @returns {Array<String>} An array of tiles given as quadkeys.
- */
-exports.indexes = function (geom, limits) {
-    return getTiles(geom, limits).map(tilebelt.tileToQuadkey);
-};
-
-function getTiles(geom, limits) {
-    var i, tile,
-        coords = geom.coordinates,
-        maxZoom = limits.max_zoom,
-        tileHash = {},
-        tiles = [];
-
-    if (geom.type === 'Point') {
-        return [tilebelt.pointToTile(coords[0], coords[1], maxZoom)];
-
-    } else if (geom.type === 'MultiPoint') {
-        for (i = 0; i < coords.length; i++) {
-            tile = tilebelt.pointToTile(coords[i][0], coords[i][1], maxZoom);
-            tileHash[toID(tile[0], tile[1], tile[2])] = true;
-        }
-    } else if (geom.type === 'LineString') {
-        lineCover(tileHash, coords, maxZoom);
-
-    } else if (geom.type === 'MultiLineString') {
-        for (i = 0; i < coords.length; i++) {
-            lineCover(tileHash, coords[i], maxZoom);
-        }
-    } else if (geom.type === 'Polygon') {
-        polygonCover(tileHash, tiles, coords, maxZoom);
-
-    } else if (geom.type === 'MultiPolygon') {
-        for (i = 0; i < coords.length; i++) {
-            polygonCover(tileHash, tiles, coords[i], maxZoom);
-        }
-    } else {
-        throw new Error('Geometry type not implemented');
+function newTileCoverWithGrid(grid) {
+    /**
+     * Given a geometry, create cells and return them in a format easily readable
+     * by any software that reads GeoJSON.
+     *
+     * @alias geojson
+     * @param {Object} geom GeoJSON geometry
+     * @param {Object} limits an object with min_zoom and max_zoom properties
+     * specifying the minimum and maximum level to be tiled.
+     * @returns {Object} FeatureCollection of cells formatted as GeoJSON Features
+     */
+    function geojson(geom, limits) {
+        return {
+            type: 'FeatureCollection',
+            features: getTiles(geom, limits).map(tileToFeature),
+        };
     }
 
-    if (limits.min_zoom !== maxZoom) {
-        // sync tile hash and tile array so that both contain the same tiles
-        var len = tiles.length;
+    function tileToFeature(t) {
+        return {
+            type: 'Feature',
+            geometry: grid.tileToGeoJSON(t),
+            properties: {},
+        };
+    }
+
+    /**
+     * Given a geometry, create cells and return them as
+     * [quadkey](http://msdn.microsoft.com/en-us/library/bb259689.aspx) indexes.
+     *
+     * @alias indexes
+     * @param {Object} geom GeoJSON geometry
+     * @param {Object} limits an object with min_zoom and max_zoom properties
+     * specifying the minimum and maximum level to be tiled.
+     * @returns {Array<String>} An array of tiles given as quadkeys.
+     */
+    function getIndexes(geom, limits) {
+        return getTiles(geom, limits).map(tileToQuadkey);
+    }
+
+    /**
+     * Given a geometry, create cells and return them in their raw form,
+     * as an array of cell identifiers.
+     *
+     * @alias tiles
+     * @param {Object} geom GeoJSON geometry
+     * @param {Object} limits an object with min_zoom and max_zoom properties
+     * specifying the minimum and maximum level to be tiled.
+     * @returns {Array<Array<number>>} An array of tiles given as [x, y, z] arrays
+     */
+    function getTiles(geom, limits) {
+        var i,
+            tile,
+            coords = geom.coordinates,
+            maxZoom = limits.max_zoom,
+            tileHash = {},
+            tiles = [];
+
+        if (geom.type === 'Point') {
+            return [grid.pointToTile(coords[0], coords[1], maxZoom)];
+        } else if (geom.type === 'MultiPoint') {
+            for (i = 0; i < coords.length; i++) {
+                tile = grid.pointToTile(coords[i][0], coords[i][1], maxZoom);
+                tileHash[toID(tile[0], tile[1], tile[2])] = true;
+            }
+        } else if (geom.type === 'LineString') {
+            lineCover(tileHash, coords, maxZoom);
+        } else if (geom.type === 'MultiLineString') {
+            for (i = 0; i < coords.length; i++) {
+                lineCover(tileHash, coords[i], maxZoom);
+            }
+        } else if (geom.type === 'Polygon') {
+            polygonCover(tileHash, tiles, coords, maxZoom);
+        } else if (geom.type === 'MultiPolygon') {
+            for (i = 0; i < coords.length; i++) {
+                polygonCover(tileHash, tiles, coords[i], maxZoom);
+            }
+        } else {
+            throw new Error('Geometry type not implemented');
+        }
+
+        if (limits.min_zoom !== maxZoom) {
+            // sync tile hash and tile array so that both contain the same tiles
+            var len = tiles.length;
+            appendHashTiles(tileHash, tiles);
+            for (i = 0; i < len; i++) {
+                var t = tiles[i];
+                tileHash[toID(t[0], t[1], t[2])] = true;
+            }
+            return mergeTiles(tileHash, tiles, limits);
+        }
+
         appendHashTiles(tileHash, tiles);
-        for (i = 0; i < len; i++) {
-            var t = tiles[i];
-            tileHash[toID(t[0], t[1], t[2])] = true;
-        }
-        return mergeTiles(tileHash, tiles, limits);
+        return tiles;
     }
 
-    appendHashTiles(tileHash, tiles);
-    return tiles;
+    function lineCover(tileHash, coords, maxZoom, ring) {
+        var prevX, prevY;
+
+        for (var i = 0; i < coords.length - 1; i++) {
+            var start = grid.pointToTileFraction(
+                    coords[i][0],
+                    coords[i][1],
+                    maxZoom
+                ),
+                stop = grid.pointToTileFraction(
+                    coords[i + 1][0],
+                    coords[i + 1][1],
+                    maxZoom
+                ),
+                x0 = start[0],
+                y0 = start[1],
+                x1 = stop[0],
+                y1 = stop[1],
+                dx = x1 - x0,
+                dy = y1 - y0;
+
+            if (dy === 0 && dx === 0) continue;
+
+            var sx = dx > 0 ? 1 : -1,
+                sy = dy > 0 ? 1 : -1,
+                x = Math.floor(x0),
+                y = Math.floor(y0),
+                tMaxX =
+                    dx === 0 ? Infinity : Math.abs(((dx > 0 ? 1 : 0) + x - x0) / dx),
+                tMaxY =
+                    dy === 0 ? Infinity : Math.abs(((dy > 0 ? 1 : 0) + y - y0) / dy),
+                tdx = Math.abs(sx / dx),
+                tdy = Math.abs(sy / dy);
+
+            if (x !== prevX || y !== prevY) {
+                tileHash[toID(x, y, maxZoom)] = true;
+                if (ring && y !== prevY) ring.push([x, y]);
+                prevX = x;
+                prevY = y;
+            }
+
+            while (tMaxX < 1 || tMaxY < 1) {
+                if (tMaxX < tMaxY) {
+                    tMaxX += tdx;
+                    x += sx;
+                } else {
+                    tMaxY += tdy;
+                    y += sy;
+                }
+                tileHash[toID(x, y, maxZoom)] = true;
+                if (ring && y !== prevY) ring.push([x, y]);
+                prevX = x;
+                prevY = y;
+            }
+        }
+
+        if (ring && y === ring[0][1]) ring.pop();
+    }
+
+    function polygonCover(tileHash, tileArray, geom, zoom) {
+        var intersections = [];
+
+        for (var i = 0; i < geom.length; i++) {
+            var ring = [];
+            lineCover(tileHash, geom[i], zoom, ring);
+
+            for (var j = 0, len = ring.length, k = len - 1; j < len; k = j++) {
+                var m = (j + 1) % len;
+                var y = ring[j][1];
+
+                // add interesction if it's not local extremum or duplicate
+                if (
+                    (y > ring[k][1] || y > ring[m][1]) && // not local minimum
+                    (y < ring[k][1] || y < ring[m][1]) && // not local maximum
+                    y !== ring[m][1]
+                )
+                    intersections.push(ring[j]);
+            }
+        }
+
+        intersections.sort(compareTiles); // sort by y, then x
+
+        for (i = 0; i < intersections.length; i += 2) {
+            // fill tiles between pairs of intersections
+            y = intersections[i][1];
+            for (
+                var x = intersections[i][0] + 1;
+                x < intersections[i + 1][0];
+                x++
+            ) {
+                var id = toID(x, y, zoom);
+                if (!tileHash[id]) {
+                    tileArray.push([x, y, zoom]);
+                }
+            }
+        }
+    }
+
+    return {
+        indexes: getIndexes,
+        tiles: getTiles,
+        geojson: geojson,
+    };
 }
 
 function mergeTiles(tileHash, tiles, limits) {
     var mergedTiles = [];
 
     for (var z = limits.max_zoom; z > limits.min_zoom; z--) {
-
         var parentTileHash = {};
         var parentTiles = [];
 
@@ -146,89 +260,8 @@ function mergeTiles(tileHash, tiles, limits) {
     return mergedTiles;
 }
 
-function polygonCover(tileHash, tileArray, geom, zoom) {
-    var intersections = [];
-
-    for (var i = 0; i < geom.length; i++) {
-        var ring = [];
-        lineCover(tileHash, geom[i], zoom, ring);
-
-        for (var j = 0, len = ring.length, k = len - 1; j < len; k = j++) {
-            var m = (j + 1) % len;
-            var y = ring[j][1];
-
-            // add interesction if it's not local extremum or duplicate
-            if ((y > ring[k][1] || y > ring[m][1]) && // not local minimum
-                (y < ring[k][1] || y < ring[m][1]) && // not local maximum
-                y !== ring[m][1]) intersections.push(ring[j]);
-        }
-    }
-
-    intersections.sort(compareTiles); // sort by y, then x
-
-    for (i = 0; i < intersections.length; i += 2) {
-        // fill tiles between pairs of intersections
-        y = intersections[i][1];
-        for (var x = intersections[i][0] + 1; x < intersections[i + 1][0]; x++) {
-            var id = toID(x, y, zoom);
-            if (!tileHash[id]) {
-                tileArray.push([x, y, zoom]);
-            }
-        }
-    }
-}
-
 function compareTiles(a, b) {
-    return (a[1] - b[1]) || (a[0] - b[0]);
-}
-
-function lineCover(tileHash, coords, maxZoom, ring) {
-    var prevX, prevY;
-
-    for (var i = 0; i < coords.length - 1; i++) {
-        var start = tilebelt.pointToTileFraction(coords[i][0], coords[i][1], maxZoom),
-            stop = tilebelt.pointToTileFraction(coords[i + 1][0], coords[i + 1][1], maxZoom),
-            x0 = start[0],
-            y0 = start[1],
-            x1 = stop[0],
-            y1 = stop[1],
-            dx = x1 - x0,
-            dy = y1 - y0;
-
-        if (dy === 0 && dx === 0) continue;
-
-        var sx = dx > 0 ? 1 : -1,
-            sy = dy > 0 ? 1 : -1,
-            x = Math.floor(x0),
-            y = Math.floor(y0),
-            tMaxX = dx === 0 ? Infinity : Math.abs(((dx > 0 ? 1 : 0) + x - x0) / dx),
-            tMaxY = dy === 0 ? Infinity : Math.abs(((dy > 0 ? 1 : 0) + y - y0) / dy),
-            tdx = Math.abs(sx / dx),
-            tdy = Math.abs(sy / dy);
-
-        if (x !== prevX || y !== prevY) {
-            tileHash[toID(x, y, maxZoom)] = true;
-            if (ring && y !== prevY) ring.push([x, y]);
-            prevX = x;
-            prevY = y;
-        }
-
-        while (tMaxX < 1 || tMaxY < 1) {
-            if (tMaxX < tMaxY) {
-                tMaxX += tdx;
-                x += sx;
-            } else {
-                tMaxY += tdy;
-                y += sy;
-            }
-            tileHash[toID(x, y, maxZoom)] = true;
-            if (ring && y !== prevY) ring.push([x, y]);
-            prevX = x;
-            prevY = y;
-        }
-    }
-
-    if (ring && y === ring[0][1]) ring.pop();
+    return a[1] - b[1] || a[0] - b[0];
 }
 
 function appendHashTiles(hash, tiles) {
@@ -240,14 +273,43 @@ function appendHashTiles(hash, tiles) {
 
 function toID(x, y, z) {
     var dim = 2 * (1 << z);
-    return ((dim * y + x) * 32) + z;
+    return (dim * y + x) * 32 + z;
 }
 
 function fromID(id) {
     var z = id % 32,
         dim = 2 * (1 << z),
-        xy = ((id - z) / 32),
+        xy = (id - z) / 32,
         x = xy % dim,
         y = ((xy - x) / dim) % dim;
     return [x, y, z];
 }
+
+/**
+ * Get the quadkey for a tile
+ *
+ * @name tileToQuadkey
+ * @param {Array<number>} tile
+ * @returns {string} quadkey
+ * @example
+ * var quadkey = tileToQuadkey([0, 1, 5])
+ * //=quadkey
+ */
+function tileToQuadkey(tile) {
+    var index = '';
+    for (var z = tile[2]; z > 0; z--) {
+        var b = 0;
+        var mask = 1 << (z - 1);
+        if ((tile[0] & mask) !== 0) b++;
+        if ((tile[1] & mask) !== 0) b += 2;
+        index += b.toString();
+    }
+    return index;
+}
+
+module.exports = {
+    newTileCoverWithGrid: newTileCoverWithGrid,
+    GeodeticTileCover: newTileCoverWithGrid(geodeticGrid),
+    MecartoTileCover: newTileCoverWithGrid(mecartoGrid),
+    SlippyTileCover: newTileCoverWithGrid(slippyGrid)
+};
