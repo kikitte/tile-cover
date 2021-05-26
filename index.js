@@ -1,7 +1,7 @@
 'use strict';
 
 var geodeticGrid = require('./grid-geodetic');
-var mercatorGrid = require('./grid-mecarto');
+var mercatorGrid = require('./grid-mercator');
 var slippyGrid = require('./grid-slippy');
 
 /**
