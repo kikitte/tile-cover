@@ -1,7 +1,7 @@
 'use strict';
 
 var geodeticGrid = require('./grid-geodetic');
-var mecartoGrid = require('./grid-mecarto');
+var mercatorGrid = require('./grid-mecarto');
 var slippyGrid = require('./grid-slippy');
 
 /**
@@ -310,6 +310,6 @@ function tileToQuadkey(tile) {
 module.exports = {
     newTileCoverWithGrid: newTileCoverWithGrid,
     GeodeticTileCover: newTileCoverWithGrid(geodeticGrid),
-    MecartoTileCover: newTileCoverWithGrid(mecartoGrid),
+    MercatorTileCover: newTileCoverWithGrid(mercatorGrid),
     SlippyTileCover: newTileCoverWithGrid(slippyGrid)
 };
