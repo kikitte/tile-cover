@@ -87,9 +87,9 @@ function tileToBBOX(tile) {
     var res = resolutionFactor / (1 << tz);
     return [
         tx * tileSize * res - 180,
-        90 - ty * tileSize * res,
-        (tx + 1) * tileSize * res - 180,
         90 - (ty + 1) * tileSize * res,
+        (tx + 1) * tileSize * res - 180,
+        90 - ty * tileSize * res,
     ];
 }
 

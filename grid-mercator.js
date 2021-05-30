@@ -87,9 +87,11 @@ function tileToBBOX(tile) {
         tz = tile[2];
     var res = initialResolution / (1 << tz);
     var minx = tx * tileSize * res - originShift,
-        miny = originShift - ty * tileSize * res,
+        maxy = originShift - ty * tileSize * res,
         maxx = (tx + 1) * tileSize * res - originShift,
-        maxy = originShift - (ty + 1) * tileSize * res;
+        miny = originShift - (ty + 1) * tileSize * res;
+
+
 
     return [minx, miny, maxx, maxy];
 }
